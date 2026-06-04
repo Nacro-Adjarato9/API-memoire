@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+.Python
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+
+# Environments
+venv/
+ENV/
+env/
+.venv/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Coverage
+htmlcov/
+.coverage
+coverage.xml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pytest
+.cache/
+
+# Generated
+*.pot
+*.pyc
+*.pyo
+*.pyd
+
+# VS Code settings
+.vscode/
