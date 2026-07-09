@@ -20,6 +20,8 @@ class BienSerializer(serializers.ModelSerializer):
     # 'images' est une relation inverse (Image.bien -> related_name='images') : ModelSerializer
     # avec fields='__all__' ne l'inclut jamais automatiquement, il faut la déclarer explicitement,
     # sinon le front n'a aucun moyen de savoir quelles photos sont liées à ce bien.
+    # Le frontend utilise directement p.images[0] comme src d'une balise <img> : on renvoie
+    # donc une liste de simples URLs (string), pas des objets Image.
     images = serializers.SerializerMethodField()
 
     class Meta:
@@ -27,9 +29,14 @@ class BienSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_images(self, obj):
-        from images.serializers import ImageSerializer
-
-        return ImageSerializer(obj.images.all(), many=True, context=self.context).data
+        request = self.context.get('request')
+        urls = []
+        for img in obj.images.all():
+            if img.fichier:
+                urls.append(request.build_absolute_uri(img.fichier.url) if request else img.fichier.url)
+            elif img.url:
+                urls.append(img.url)
+        return urls
 
     def _contact_user(self, obj):
         return obj.agence or obj.proprietaire
