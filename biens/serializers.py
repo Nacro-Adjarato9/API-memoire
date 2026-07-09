@@ -17,10 +17,19 @@ class BienSerializer(serializers.ModelSerializer):
     # 'agence' au sens rôle métier (agence OU agent), pas seulement le champ agence du bien :
     # utilisé par le front pour afficher le bon badge ("Propriétaire" / "Agence immobilière").
     contact_role = serializers.SerializerMethodField()
+    # 'images' est une relation inverse (Image.bien -> related_name='images') : ModelSerializer
+    # avec fields='__all__' ne l'inclut jamais automatiquement, il faut la déclarer explicitement,
+    # sinon le front n'a aucun moyen de savoir quelles photos sont liées à ce bien.
+    images = serializers.SerializerMethodField()
 
     class Meta:
         model = Bien
         fields = '__all__'
+
+    def get_images(self, obj):
+        from images.serializers import ImageSerializer
+
+        return ImageSerializer(obj.images.all(), many=True, context=self.context).data
 
     def _contact_user(self, obj):
         return obj.agence or obj.proprietaire
