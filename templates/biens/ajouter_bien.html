@@ -1,0 +1,110 @@
+<!-- Page de démo : le propriétaire place son bien sur la carte -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Ajouter un bien - LogCiv</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 30px auto; }
+    #map { height: 400px; width: 100%; border-radius: 8px; margin-bottom: 16px; }
+    input, textarea, select { width: 100%; margin-bottom: 10px; padding: 8px; box-sizing: border-box; }
+    button { padding: 10px 20px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>Placer votre bien sur la carte</h2>
+  <p>Cliquez sur la carte ou déplacez le marqueur pour positionner votre bien. Connectez-vous d'abord (token JWT dans localStorage sous "accessToken", conformément au frontend React).</p>
+  <div id="map"></div>
+
+  <form id="bienForm">
+    <input type="text" id="titre" placeholder="Titre du bien" required>
+    <textarea id="description" placeholder="Description"></textarea>
+    <input type="text" id="ville" placeholder="Ville" required>
+    <input type="text" id="localisation" placeholder="Adresse / quartier">
+    <input type="number" id="prix" placeholder="Prix" required>
+    <select id="type">
+      <option value="appartement">Appartement</option>
+      <option value="maison">Maison</option>
+      <option value="terrain">Terrain</option>
+      <option value="bureau">Bureau</option>
+      <option value="commerce">Commerce</option>
+    </select>
+    <input type="hidden" id="latitude">
+    <input type="hidden" id="longitude">
+    <button type="submit">Publier le bien</button>
+  </form>
+
+  <script>
+    let map, marker;
+
+    function initMap() {
+      // Coordonnées par défaut : à adapter à ta ville principale
+      const defaultLocation = { lat: 5.3599, lng: -4.0083 }; // Abidjan
+
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 13,
+        center: defaultLocation,
+      });
+
+      marker = new google.maps.Marker({
+        position: defaultLocation,
+        map: map,
+        draggable: true,
+      });
+
+      setCoords(defaultLocation.lat, defaultLocation.lng);
+
+      map.addListener("click", (e) => {
+        marker.setPosition(e.latLng);
+        setCoords(e.latLng.lat(), e.latLng.lng());
+      });
+
+      marker.addListener("dragend", () => {
+        const pos = marker.getPosition();
+        setCoords(pos.lat(), pos.lng());
+      });
+    }
+
+    function setCoords(lat, lng) {
+      document.getElementById("latitude").value = lat;
+      document.getElementById("longitude").value = lng;
+    }
+
+    document.getElementById("bienForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const data = {
+        titre: document.getElementById("titre").value,
+        description: document.getElementById("description").value,
+        ville: document.getElementById("ville").value,
+        localisation: document.getElementById("localisation").value,
+        prix: document.getElementById("prix").value,
+        type: document.getElementById("type").value,
+        latitude: document.getElementById("latitude").value,
+        longitude: document.getElementById("longitude").value,
+      };
+
+      const token = localStorage.getItem("accessToken");
+
+      const response = await fetch("/api/biens/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: "Bearer " + token } : {}),
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (response.ok) {
+        alert("Bien publié avec succès !");
+        e.target.reset();
+      } else {
+        const err = await response.text();
+        alert("Erreur lors de la publication : " + err);
+      }
+    });
+  </script>
+
+  <script async src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&callback=initMap"></script>
+</body>
+</html>

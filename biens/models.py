@@ -5,24 +5,58 @@ from django.db import models
 class Bien(models.Model):
     TYPE_CHOICES = [
         ('appartement', 'Appartement'),
+        ('duplex', 'Duplex'),
+        ('villa', 'Villa'),
         ('maison', 'Maison'),
-        ('terrain', 'Terrain'),
         ('bureau', 'Bureau'),
+        ('terrain', 'Terrain'),
+        ('studio', 'Studio'),
         ('commerce', 'Commerce'),
     ]
-    
+
     STATUT_CHOICES = [
         ('disponible', 'Disponible'),
+        ('reserve', 'Réservé'),
         ('loue', 'Loué'),
         ('vendu', 'Vendu'),
-        ('reserve', 'Réservé'),
     ]
-    
+
+    COMMUNE_CHOICES = [
+        ('cocody', 'Cocody'),
+        ('yopougon', 'Yopougon'),
+        ('marcory', 'Marcory'),
+        ('bingerville', 'Bingerville'),
+        ('plateau', 'Plateau'),
+        ('adjame', 'Adjame'),
+        ('treichville', 'Treichville'),
+        ('koumassi', 'Koumassi'),
+        ('angre', 'Angré'),
+        ('riviera', 'Riviera'),
+    ]
+
+    TITRE_PROPRIETE_CHOICES = [
+        ('acd', 'ACD'),
+        ('titre_foncier', 'Titre Foncier (TF)'),
+        ('lettre_attribution', "Lettre d'attribution"),
+        ('autre_en_cours', 'Autre/En cours'),
+    ]
+
     titre = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     prix = models.DecimalField(max_digits=12, decimal_places=2)
-    ville = models.CharField(max_length=100)
+    prix_negociable = models.BooleanField(default=False)
+
+    # Localisation
+    pays = models.CharField(max_length=100, default="Côte d'Ivoire")
+    ville = models.CharField(max_length=100, default='Abidjan')
+    commune = models.CharField(max_length=30, choices=COMMUNE_CHOICES, blank=True)
+    quartier = models.CharField(max_length=100, blank=True)
+    adresse_precise = models.CharField(max_length=255, blank=True)
     localisation = models.TextField(blank=True)
+
+    # Position GPS placée par le propriétaire sur Google Maps
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     type = models.CharField(max_length=30, choices=TYPE_CHOICES, default='appartement')
     transaction_type = models.CharField(
         max_length=20,
@@ -38,22 +72,43 @@ class Bien(models.Model):
     piscine = models.BooleanField(default=False)
     securite = models.BooleanField(default=False)
     proximite = models.CharField(max_length=255, blank=True)
-    
+
     # Caractéristiques
+    nombre_pieces = models.PositiveIntegerField(default=0)
     nombre_chambres = models.PositiveIntegerField(default=0)
     nombre_salons = models.PositiveIntegerField(default=0)
     nombre_cuisines = models.PositiveIntegerField(default=0)
     nombre_salles_bain = models.PositiveIntegerField(default=0)
     superficie = models.DecimalField(max_digits=8, decimal_places=2, blank=True, null=True)  # en m²
     etage = models.PositiveIntegerField(blank=True, null=True)
+    nombre_niveaux = models.PositiveIntegerField(blank=True, null=True)  # utile pour les duplex
+    escalier_interieur = models.BooleanField(default=False)
     ascenseur = models.BooleanField(default=False)
     balcon = models.BooleanField(default=False)
     parking = models.BooleanField(default=False)
-    
+
+    # Conditions & titre de propriété
+    caution_mois = models.PositiveIntegerField(blank=True, null=True)
+    charges_comprises = models.BooleanField(default=False)
+    disponible_a_partir = models.DateField(blank=True, null=True)
+    annee_construction = models.PositiveIntegerField(blank=True, null=True)
+    titre_propriete = models.CharField(max_length=30, choices=TITRE_PROPRIETE_CHOICES, blank=True)
+
+    # Équipements
+    climatisation = models.BooleanField(default=False)
+    wifi = models.BooleanField(default=False)
+    cuisine_equipee = models.BooleanField(default=False)
+    groupe_electrogene = models.BooleanField(default=False)
+    gardiennage = models.BooleanField(default=False)
+    securite_24h = models.BooleanField(default=False)
+    terrasse = models.BooleanField(default=False)
+    parking_garde = models.BooleanField(default=False)
+    interphone = models.BooleanField(default=False)
+
     # Relations
     proprietaire = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='biens', blank=True, null=True)
     agence = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='biens_agence', blank=True, null=True)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

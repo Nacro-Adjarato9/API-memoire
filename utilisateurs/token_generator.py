@@ -10,8 +10,10 @@ class EmailVerificationTokenGenerator:
 
     @staticmethod
     def generate_token(user):
-        """Generate a token for email verification (valid for 24 hours)"""
-        token = secrets.token_urlsafe(32)
+        """Generate a 6-digit numeric code for email verification (valid for 24 hours).
+        Un code court est utilisable à la main, identiquement sur web et mobile,
+        sans dépendre d'un lien/URL qui peut casser si le port du front change."""
+        token = f"{secrets.randbelow(1_000_000):06d}"
         profile, _ = UserProfile.objects.get_or_create(user=user)
         profile.verification_token = token
         profile.verification_token_expires = timezone.now() + timedelta(hours=24)

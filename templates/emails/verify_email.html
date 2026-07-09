@@ -24,14 +24,16 @@
         .content {
             padding: 20px;
         }
-        .button {
+        .code {
             display: inline-block;
-            background-color: #007bff;
-            color: white;
-            padding: 10px 20px;
-            text-decoration: none;
-            border-radius: 5px;
+            background-color: #f1f5f9;
+            color: #0f172a;
+            padding: 16px 28px;
+            border-radius: 8px;
             margin: 20px 0;
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: 6px;
         }
         .footer {
             background-color: #f8f9fa;
@@ -49,9 +51,9 @@
         </div>
         <div class="content">
             <p>Bonjour {{ user.first_name|default:user.username }},</p>
-            <p>Merci de vous être inscrit sur notre plateforme immobilière. Veuillez vérifier votre adresse email en cliquant sur le lien ci-dessous:</p>
-            <a href="{{ verification_link }}" class="button">Vérifier mon Email</a>
-            <p>Ce lien expirera dans {{ expiry_hours }} heures.</p>
+            <p>Merci de vous être inscrit sur notre plateforme immobilière. Voici votre code de vérification à saisir dans l'application (web ou mobile) :</p>
+            <div class="code">{{ code }}</div>
+            <p>Ce code expirera dans {{ expiry_hours }} heures.</p>
             <p>Si vous n'avez pas créé ce compte, vous pouvez ignorer cet email.</p>
             <p>Cordialement,<br>L'équipe de la plateforme</p>
         </div>

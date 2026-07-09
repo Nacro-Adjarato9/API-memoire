@@ -78,6 +78,18 @@ EMAIL_HOST_PASSWORD = 'your-app-specific-password'  # NOT your Gmail password!
 DEFAULT_FROM_EMAIL = 'your-email@gmail.com'
 ```
 
+Dans ce projet, la configuration est maintenant pilotée par les variables d'environnement:
+
+```env
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_HOST_USER=your-email@gmail.com
+EMAIL_HOST_PASSWORD=your-app-password
+DEFAULT_FROM_EMAIL=your-email@gmail.com
+```
+
 **Générer App Password Gmail:**
 1. Aller à [myaccount.google.com](https://myaccount.google.com/)
 2. Security → App passwords

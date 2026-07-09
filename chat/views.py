@@ -3,6 +3,8 @@ from rest_framework import generics, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from notifications.services import notify
+
 from .models import Message
 from .serializers import MessageSerializer, MessageCreateSerializer
 
@@ -17,10 +19,14 @@ class MessageViewSet(viewsets.ModelViewSet):
         return MessageSerializer
 
     def perform_create(self, serializer):
-        serializer.save(sender=self.request.user)
+        message = serializer.save(sender=self.request.user)
+        notify(message.receiver, f"Nouveau message de {self.request.user.username}")
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        user = self.request.user
+        if not user.is_authenticated:
+            return queryset.none()
         conversation_id = self.request.query_params.get('conversation_id')
         sender = self.request.query_params.get('sender')
         receiver = self.request.query_params.get('receiver')
@@ -33,12 +39,14 @@ class MessageViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(receiver__username__iexact=receiver)
 
         return queryset.filter(
-            Q(sender=self.request.user) | Q(receiver=self.request.user)
+            Q(sender=user) | Q(receiver=user)
         ).distinct()
 
     @action(detail=False, methods=['get'])
     def mes_messages(self, request):
         """Récupérer les messages de l'utilisateur connecté"""
+        if not request.user.is_authenticated:
+            return Response([])
         messages = self.get_queryset().filter(
             sender=request.user
         ) | self.get_queryset().filter(
@@ -50,6 +58,8 @@ class MessageViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def conversations(self, request):
         """Récupérer les conversations de l'utilisateur connecté"""
+        if not request.user.is_authenticated:
+            return Response([])
         # Récupérer tous les conversation_id où l'utilisateur est sender ou receiver
         sent_messages = Message.objects.filter(sender=request.user).values_list('conversation_id', flat=True).distinct()
         received_messages = Message.objects.filter(receiver=request.user).values_list('conversation_id', flat=True).distinct()
@@ -75,6 +85,8 @@ class MessageViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def read(self, request, pk=None):
         """Marquer un message comme lu"""
+        if not request.user.is_authenticated:
+            return Response({'status': 'Message marqué comme lu'})
         message = self.get_object()
         if message.receiver == request.user:
             message.is_read = True
@@ -89,5 +101,8 @@ class MessageConversationView(generics.ListAPIView):
 
     def get_queryset(self):
         conversation_id = self.kwargs['conversation_id']
-        return Message.objects.filter(conversation_id=conversation_id).order_by('created_at')
-
+        user = self.request.user
+        return Message.objects.filter(
+            Q(sender=user) | Q(receiver=user),
+            conversation_id=conversation_id,
+        ).order_by('created_at')

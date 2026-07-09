@@ -26,6 +26,8 @@ from .views import (
     ProfilProprietaireVerificationView,
     ProfilAgenceVerificationView,
     UtilisateursView,
+    InitierPaiementView,
+    CinetPayWebhookView,
 )
 
 urlpatterns = [
@@ -54,4 +56,6 @@ urlpatterns = [
     path('agents/<int:pk>/biens/', AgentBiensView.as_view(), name='agent_biens'),
     path('agents/<int:pk>/avis/', AgentAvisView.as_view(), name='agent_avis'),
     path('agents/<int:pk>/avis/ajouter/', LaisserAvisAgentView.as_view(), name='laisser_avis_agent'),
+    path('paiements/initier/', InitierPaiementView.as_view(), name='paiement_initier'),
+    path('paiements/webhook/', CinetPayWebhookView.as_view(), name='paiement_webhook'),
 ]

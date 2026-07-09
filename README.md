@@ -331,7 +331,7 @@ sentry-sdk                             - Error tracking
 | Problème | Solution |
 |----------|----------|
 | Import error | `pip install` dans venv actif |
-| Email ne s'envoie pas | Vérifier EMAIL_BACKEND (console par défaut) |
+| Email ne s'envoie pas | Vérifier les variables SMTP dans `.env` et `EMAIL_BACKEND` |
 | Token expiré | Utiliser refresh endpoint |
 | CORS error | Ajouter frontend domain à CORS_ALLOWED_ORIGINS |
 | 404 sur endpoint | Vérifier URL exacte, recharger page |

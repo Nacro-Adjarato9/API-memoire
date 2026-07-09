@@ -191,6 +191,7 @@ class Visite(models.Model):
 
 class Paiement(models.Model):
     STATUT_CHOICES = [
+        ('en_attente', 'En attente'),
         ('succes', 'Succès'),
         ('echec', 'Échec'),
     ]
@@ -202,9 +203,12 @@ class Paiement(models.Model):
     utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name='paiements')
     montant = models.DecimalField(max_digits=12, decimal_places=2)
     methode = models.CharField(max_length=50, choices=METHODE_CHOICES)
-    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='succes')
-    reference_transaction = models.CharField(max_length=255)
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='en_attente')
+    reference_transaction = models.CharField(max_length=255, unique=True)
+    description = models.CharField(max_length=255, blank=True)
+    payment_url = models.URLField(blank=True)
     date = models.DateTimeField(auto_now_add=True)
+    date_maj = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"{self.methode} {self.montant} - {self.statut}"

@@ -4,18 +4,17 @@ from django.conf import settings
 
 
 def send_verification_email(user, token):
-    """Send verification email to user"""
-    verification_link = f"{settings.FRONTEND_URL}/verify-email?token={token}&email={user.email}"
-    
+    """Send verification email to user with a 6-digit code to type manually
+    (web and mobile use the same code, no dependency on a clickable link/URL)."""
     context = {
         'user': user,
-        'verification_link': verification_link,
+        'code': token,
         'expiry_hours': 24,
     }
-    
-    subject = "Vérifiez votre adresse email"
+
+    subject = "Votre code de vérification"
     html_message = render_to_string('emails/verify_email.html', context)
-    plain_message = f"Cliquez sur ce lien pour vérifier votre email: {verification_link}"
+    plain_message = f"Votre code de vérification LogCiv : {token}\n\nCe code expire dans 24 heures."
     
     send_mail(
         subject,

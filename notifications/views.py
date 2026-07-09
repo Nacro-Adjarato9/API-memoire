@@ -9,7 +9,7 @@ from .serializers import NotificationSerializer, NotificationCreateSerializer
 
 class NotificationViewSet(viewsets.ModelViewSet):
     queryset = Notification.objects.all().order_by('-created_at')
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -21,6 +21,9 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        user = self.request.user
+        if not user.is_authenticated:
+            return queryset.none()
         is_read = self.request.query_params.get('is_read')
 
         if is_read is not None:
@@ -29,11 +32,13 @@ class NotificationViewSet(viewsets.ModelViewSet):
             elif is_read.lower() == 'false':
                 queryset = queryset.filter(is_read=False)
 
-        return queryset.filter(user=self.request.user)
+        return queryset.filter(user=user)
 
     @action(detail=False, methods=['post'])
     def mark_all_as_read(self, request):
         """Mark every notification as read."""
+        if not request.user.is_authenticated:
+            return Response({'detail': '0 notifications marked as read'})
         notifications = self.get_queryset().filter(is_read=False)
         count = notifications.count()
         notifications.update(is_read=True)
@@ -42,14 +47,18 @@ class NotificationViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def unread_count(self, request):
         """Get unread notifications count."""
+        if not request.user.is_authenticated:
+            return Response({'unread_count': 0})
         count = self.get_queryset().filter(is_read=False).count()
         return Response({'unread_count': count})
 
 
 class NotificationMarkAsReadView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def put(self, request, pk):
+        if not request.user.is_authenticated:
+            return Response({'detail': 'Notification introuvable'}, status=status.HTTP_404_NOT_FOUND)
         try:
             notification = Notification.objects.get(pk=pk, user=request.user)
         except Notification.DoesNotExist:

@@ -8,11 +8,27 @@ class ReservationSerializer(serializers.ModelSerializer):
     bien_titre = serializers.ReadOnlyField(source='bien.titre')
     bien_prix = serializers.ReadOnlyField(source='bien.prix')
     bien_ville = serializers.ReadOnlyField(source='bien.ville')
+    client_nom = serializers.SerializerMethodField()
+    client_telephone = serializers.SerializerMethodField()
 
     class Meta:
         model = Reservation
-        fields = ('id', 'utilisateur', 'bien', 'bien_titre', 'bien_prix', 'bien_ville', 'date', 'message', 'status', 'created_at')
+        fields = (
+            'id', 'utilisateur', 'bien', 'bien_titre', 'bien_prix', 'bien_ville',
+            'client_nom', 'client_telephone', 'date', 'message', 'status', 'created_at',
+        )
         read_only_fields = ('id', 'utilisateur', 'status', 'created_at')
+
+    def get_client_nom(self, obj):
+        user = obj.utilisateur
+        full_name = f"{user.first_name} {user.last_name}".strip()
+        return full_name or user.username
+
+    def get_client_telephone(self, obj):
+        try:
+            return obj.utilisateur.profile.telephone or ""
+        except Exception:
+            return ""
 
 
 class ReservationCreateSerializer(serializers.ModelSerializer):

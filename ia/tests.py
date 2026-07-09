@@ -89,5 +89,5 @@ class IAViewTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.data["valide"])
-        self.assertIn("Verification manuelle recommandée", response.data["message"])
+        self.assertIn("Vérification manuelle recommandée", response.data["message"])
         self.assertEqual(response.data["details"]["type_detecte"], "CNI")

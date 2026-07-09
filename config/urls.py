@@ -14,9 +14,10 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
 from django.contrib import admin
 from django.urls import path, include
-from django.views.generic import RedirectView
+from django.views.generic import RedirectView, TemplateView
 from rest_framework.routers import DefaultRouter
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -86,20 +87,23 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('', RedirectView.as_view(url='/api/', permanent=False)),
-    path('api/', include(router.urls)),
-    path('api-auth/', include('rest_framework.urls')),
+    # path('api-auth/', include('rest_framework.urls')),  # Enlévé - API publique
     path('admin/', admin.site.urls),
 
     # Documentation Swagger
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 
-    # APIs (non-ViewSet / extra routes)
+    # APIs (non-ViewSet / extra routes) — doivent être incluses AVANT router.urls, sinon
+    # UtilisateurViewSet (utilisateurs/<pk>/) intercepte des routes comme utilisateurs/me/
+    # avant qu'elles n'atteignent leur vraie vue (ex: pk="me" → 404 générique).
     path('api/', include('utilisateurs.urls')),
-    path('api/', include('ia.urls')),
+    path('ia/', include('ia.urls')),
+    path('api/ia/', include('ia.urls')),
     path('api/', include('notifications.urls')),
     path('api/', include('reservations.urls')),
     path('api/', include('chat.urls')),
+    path('api/', include(router.urls)),
 
     # Utility endpoints
     path('api/search/', SearchView.as_view(), name='search'),
@@ -109,4 +113,26 @@ urlpatterns = [
     path('api/types-bien/', TypesBienView.as_view(), name='types-bien'),
     path('api/locataires/', LocatairesView.as_view(), name='locataires'),
     path('api/acteurs/', ActeursView.as_view(), name='acteurs'),
+
+    # Démo carte Google Maps (propriétaire place son bien / locataire consulte)
+    path(
+        'biens/ajouter/',
+        TemplateView.as_view(
+            template_name='biens/ajouter_bien.html',
+            extra_context={'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY},
+        ),
+        name='biens-ajouter',
+    ),
+    path(
+        'biens/carte/',
+        TemplateView.as_view(
+            template_name='biens/carte_biens.html',
+            extra_context={'google_maps_api_key': settings.GOOGLE_MAPS_API_KEY},
+        ),
+        name='biens-carte',
+    ),
 ]
+
+if settings.DEBUG:
+    from django.conf.urls.static import static
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

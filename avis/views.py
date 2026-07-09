@@ -2,13 +2,19 @@ from rest_framework import generics, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from notifications.services import notify
+
 from .models import Avis
 from .serializers import AvisSerializer, AvisCreateSerializer
 
 
 class AvisViewSet(viewsets.ModelViewSet):
     queryset = Avis.objects.all().order_by('-created_at')
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.AllowAny()]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -16,7 +22,12 @@ class AvisViewSet(viewsets.ModelViewSet):
         return AvisSerializer
 
     def perform_create(self, serializer):
-        serializer.save(utilisateur=self.request.user)
+        avis = serializer.save(utilisateur=self.request.user)
+        destinataire = avis.bien.agence or avis.bien.proprietaire
+        notify(
+            destinataire,
+            f"Nouvel avis ({avis.note}/5) de {self.request.user.username} sur \"{avis.bien.titre}\"",
+        )
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -66,4 +77,3 @@ class AvisViewSet(viewsets.ModelViewSet):
             'note_moyenne': round(moyenne, 1),
             'distribution': distribution
         })
-

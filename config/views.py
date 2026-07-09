@@ -155,7 +155,6 @@ class SearchView(APIView):
                     Q(user__first_name__icontains=query)
                     | Q(user__last_name__icontains=query)
                     | Q(telephone__icontains=query)
-                    | Q(ville__icontains=query)
                 )
                 .select_related("user")[:5]
             )
@@ -182,7 +181,7 @@ class SearchView(APIView):
 
 class StatsView(APIView):
     """Dashboard stats."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         user = request.user
@@ -233,7 +232,7 @@ class StatsView(APIView):
 
 class DashboardView(APIView):
     """Dashboard summary by scope."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get(self, request, scope):
         user = request.user

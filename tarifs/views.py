@@ -16,9 +16,11 @@ class TarifViewSet(viewsets.ReadOnlyModelViewSet):
 
 class AbonnementViewSet(viewsets.ModelViewSet):
     serializer_class = AbonnementSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
+        if not self.request.user.is_authenticated:
+            return Abonnement.objects.none()
         return Abonnement.objects.filter(utilisateur=self.request.user).order_by('-created_at')
 
     def get_serializer_class(self):

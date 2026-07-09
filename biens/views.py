@@ -12,7 +12,11 @@ from reservations.models import Reservation
 
 class BienViewSet(viewsets.ModelViewSet):
     queryset = Bien.objects.all().order_by('-created_at')
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.AllowAny()]
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
@@ -60,13 +64,17 @@ class BienViewSet(viewsets.ModelViewSet):
         return queryset
 
     @swagger_auto_schema(
-        operation_description="Récupérer les biens de l'utilisateur connecté",
+        operation_description="Récupérer les biens de l'utilisateur connecté ou tous les biens disponibles",
         responses={200: BienSerializer(many=True)}
     )
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
     def mes_biens(self, request):
-        """Récupérer les biens de l'utilisateur connecté"""
-        biens = self.get_queryset().filter(Q(proprietaire=request.user) | Q(agence=request.user))
+        """Récupérer les biens de l'utilisateur connecté ou tous les biens disponibles"""
+        if request.user.is_authenticated:
+            biens = self.get_queryset().filter(Q(proprietaire=request.user) | Q(agence=request.user))
+        else:
+            biens = self.get_queryset().filter(statut='disponible')
+
         serializer = self.get_serializer(biens, many=True)
         return Response(serializer.data)
 
@@ -118,18 +126,23 @@ class DocumentViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         type_document = self.request.query_params.get('type_document')
         statut = self.request.query_params.get('statut')
+        user = self.request.user
+
+        if not user.is_authenticated:
+            return queryset.none()
 
         if type_document:
             queryset = queryset.filter(type_document__iexact=type_document)
         if statut:
             queryset = queryset.filter(statut_verification__iexact=statut)
 
-        return queryset.filter(Q(proprietaire=self.request.user) | Q(agence=self.request.user))
+        return queryset.filter(Q(proprietaire=user) | Q(agence=user))
 
     @action(detail=False, methods=['get'])
     def mes_documents(self, request):
         """Récupérer les documents de l'utilisateur connecté"""
+        if not request.user.is_authenticated:
+            return Response([])
         documents = self.get_queryset().filter(Q(proprietaire=request.user) | Q(agence=request.user))
         serializer = self.get_serializer(documents, many=True)
         return Response(serializer.data)
-

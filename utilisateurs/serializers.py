@@ -124,7 +124,8 @@ class RegisterSerializer(serializers.ModelSerializer):
             data['first_name'] = data['prenom']
         if data['password'] != data['password2']:
             raise serializers.ValidationError({"password": "Les mots de passe ne correspondent pas."})
-        if data.get('user_type') not in ['locataire', 'proprietaire', 'agent', 'agence', 'admin']:
+        # 'admin' est exclu volontairement : ce rôle ne doit jamais être auto-attribuable à l'inscription.
+        if data.get('user_type') not in ['locataire', 'proprietaire', 'agent', 'agence']:
             raise serializers.ValidationError({"user_type": "Type d'utilisateur invalide."})
         # Email uniqueness check
         email = data.get('email')
@@ -274,7 +275,14 @@ class PaiementSerializer(serializers.ModelSerializer):
     class Meta:
         model = Paiement
         fields = '__all__'
-        read_only_fields = ('utilisateur', 'date')
+        read_only_fields = ('utilisateur', 'statut', 'reference_transaction', 'payment_url', 'date', 'date_maj')
+
+
+class InitierPaiementSerializer(serializers.Serializer):
+    montant = serializers.IntegerField(min_value=100)
+    methode = serializers.ChoiceField(choices=Paiement.METHODE_CHOICES)
+    type_transaction = serializers.ChoiceField(choices=Transaction.TYPE_CHOICES)
+    description = serializers.CharField(required=False, allow_blank=True, max_length=255)
 
 
 class TransactionSerializer(serializers.ModelSerializer):
@@ -389,16 +397,11 @@ class ProfilProprietaireVerificationSerializer(serializers.ModelSerializer):
             'photo_piece_verso',
             'selfie_verification',
         )
+        extra_kwargs = {f: {'required': False} for f in fields}
 
     def validate(self, data):
-        missing = [
-            f for f in self.fields.keys()
-            if f not in data or data.get(f) in [None, '', []]
-        ]
-        if missing:
-            raise serializers.ValidationError(
-                f"Champs requis manquants: {', '.join(missing)}"
-            )
+        if not data:
+            raise serializers.ValidationError("Au moins un document est requis.")
         return data
 
 
@@ -410,16 +413,11 @@ class ProfilAgenceVerificationSerializer(serializers.ModelSerializer):
             'numero_contribuable',
             'document_legal',
         )
+        extra_kwargs = {f: {'required': False} for f in fields}
 
     def validate(self, data):
-        missing = [
-            f for f in self.fields.keys()
-            if f not in data or data.get(f) in [None, '', []]
-        ]
-        if missing:
-            raise serializers.ValidationError(
-                f"Champs requis manquants: {', '.join(missing)}"
-            )
+        if not data:
+            raise serializers.ValidationError("Au moins un document est requis.")
         return data
 
 

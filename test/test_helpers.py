@@ -1,8 +1,9 @@
 from datetime import timedelta
-from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.test import TestCase
+from django.test.utils import override_settings
 from django.utils import timezone
 
 from utilisateurs.emails import (
@@ -77,34 +78,28 @@ class EmailHelperTests(TestCase):
             password="StrongPass123!",
         )
 
-    @patch("utilisateurs.emails.send_mail")
-    def test_send_verification_email_calls_send_mail(self, mocked_send_mail):
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_send_verification_email_sends_real_message(self):
         send_verification_email(self.user, "abc123")
 
-        mocked_send_mail.assert_called_once()
-        args, kwargs = mocked_send_mail.call_args
-        self.assertIn("V", args[0])
-        self.assertIn("verify-email", args[1])
-        self.assertIn("html_message", kwargs)
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.subject, "Vérifiez votre adresse email")
+        self.assertEqual(message.from_email, "noreply@immobilier-app.com")
+        self.assertEqual(message.to, [self.user.email])
+        self.assertIn("verify-email?token=abc123", message.body)
+        self.assertTrue(message.alternatives)
+        self.assertIn("verify-email?token=abc123", message.alternatives[0][0])
 
-    @patch("utilisateurs.emails.send_mail")
-    def test_send_password_reset_email_calls_send_mail(self, mocked_send_mail):
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_send_password_reset_email_sends_real_message(self):
         send_password_reset_email(self.user, "abc123")
 
-        mocked_send_mail.assert_called_once()
-        args, kwargs = mocked_send_mail.call_args
-        self.assertIn("R", args[0])
-        self.assertIn("reset-password", args[1])
-        self.assertIn("html_message", kwargs)
-
-    @patch("utilisateurs.emails.send_mail")
-    def test_send_verification_email_uses_frontend_url(self, mocked_send_mail):
-        send_verification_email(self.user, "token-1")
-        args, _ = mocked_send_mail.call_args
-        self.assertIn("http://localhost:3000", args[1])
-
-    @patch("utilisateurs.emails.send_mail")
-    def test_send_password_reset_email_uses_frontend_url(self, mocked_send_mail):
-        send_password_reset_email(self.user, "token-2")
-        args, _ = mocked_send_mail.call_args
-        self.assertIn("http://localhost:3000", args[1])
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.subject, "Réinitialiser votre mot de passe")
+        self.assertEqual(message.from_email, "noreply@immobilier-app.com")
+        self.assertEqual(message.to, [self.user.email])
+        self.assertIn("reset-password?token=abc123", message.body)
+        self.assertTrue(message.alternatives)
+        self.assertIn("reset-password?token=abc123", message.alternatives[0][0])

@@ -10,17 +10,99 @@ from .models import Bien, Document
 class BienSerializer(serializers.ModelSerializer):
     proprietaire = serializers.ReadOnlyField(source='proprietaire.username')
     agence = serializers.ReadOnlyField(source='agence.username')
+    contact_id = serializers.SerializerMethodField()
+    contact_nom = serializers.SerializerMethodField()
+    contact_telephone = serializers.SerializerMethodField()
+    contact_email = serializers.SerializerMethodField()
+    # 'agence' au sens rôle métier (agence OU agent), pas seulement le champ agence du bien :
+    # utilisé par le front pour afficher le bon badge ("Propriétaire" / "Agence immobilière").
+    contact_role = serializers.SerializerMethodField()
 
     class Meta:
         model = Bien
         fields = '__all__'
 
+    def _contact_user(self, obj):
+        return obj.agence or obj.proprietaire
+
+    def get_contact_id(self, obj):
+        user = self._contact_user(obj)
+        return user.id if user else None
+
+    def get_contact_nom(self, obj):
+        user = self._contact_user(obj)
+        if not user:
+            return ""
+        full_name = f"{user.first_name} {user.last_name}".strip()
+        return full_name or user.username
+
+    def get_contact_telephone(self, obj):
+        user = self._contact_user(obj)
+        if not user:
+            return ""
+        try:
+            return user.profile.telephone or ""
+        except Exception:
+            return ""
+
+    def get_contact_email(self, obj):
+        user = self._contact_user(obj)
+        return user.email if user else ""
+
+    def get_contact_role(self, obj):
+        if obj.agence:
+            return "agence"
+        if obj.proprietaire:
+            return "proprietaire"
+        return ""
+
 
 class BienCreateSerializer(serializers.ModelSerializer):
+    # FloatField plutôt que le DecimalField auto-généré : les coordonnées GPS envoyées
+    # par le navigateur/la carte arrivent avec une précision flottante brute (ex:
+    # 5.358600000123456), ce qui casse la validation "max_digits" de DRF avant même
+    # l'arrondi. On accepte le float et on l'arrondit nous-mêmes dans validate().
+    latitude = serializers.FloatField(required=False, allow_null=True)
+    longitude = serializers.FloatField(required=False, allow_null=True)
+
     class Meta:
         model = Bien
         fields = '__all__'
         read_only_fields = ('created_at', 'updated_at')
+
+    # Champs à choix où le front envoie parfois le libellé affiché ("Titre
+    # Foncier (TF)") plutôt que le slug attendu par le modèle ("titre_foncier").
+    # On construit un mapping libellé -> slug (insensible à la casse) pour
+    # chacun, à partir des choices du modèle lui-même.
+    _CHOICE_FIELDS = ('commune', 'type', 'titre_propriete')
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            data = dict(data)
+            model_fields = {f.name: f for f in Bien._meta.get_fields()}
+            for field_name in self._CHOICE_FIELDS:
+                value = data.get(field_name)
+                if not isinstance(value, str) or not value:
+                    continue
+                field = model_fields.get(field_name)
+                choices = getattr(field, 'choices', None) or []
+                valid_slugs = {slug for slug, _ in choices}
+                if value in valid_slugs:
+                    continue
+                label_to_slug = {label.strip().lower(): slug for slug, label in choices}
+                normalized = label_to_slug.get(value.strip().lower())
+                if normalized is None and value.strip().lower() in valid_slugs:
+                    normalized = value.strip().lower()
+                if normalized is not None:
+                    data[field_name] = normalized
+        return super().to_internal_value(data)
+
+    def validate(self, data):
+        if data.get('latitude') is not None:
+            data['latitude'] = round(data['latitude'], 6)
+        if data.get('longitude') is not None:
+            data['longitude'] = round(data['longitude'], 6)
+        return data
 
     def create(self, validated_data):
         user = self.context['request'].user

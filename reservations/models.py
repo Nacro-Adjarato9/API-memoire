@@ -15,7 +15,10 @@ class Reservation(models.Model):
     bien = models.ForeignKey(Bien, on_delete=models.CASCADE, related_name='reservations')
     date = models.DateField()
     message = models.TextField(blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    # Une demande de visite est auto-confirmée dès sa création (pas de validation
+    # manuelle du propriétaire requise) ; celui-ci garde la possibilité d'annuler
+    # via l'endpoint de mise à jour de statut si besoin.
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='confirmed')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

@@ -4,6 +4,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from notifications.services import notify
+
 from .models import Reservation
 from .serializers import (
     ReservationCreateSerializer,
@@ -22,7 +24,18 @@ class ReservationViewSet(viewsets.ModelViewSet):
         return ReservationSerializer
 
     def perform_create(self, serializer):
-        serializer.save(utilisateur=self.request.user)
+        reservation = serializer.save(utilisateur=self.request.user)
+        destinataire = reservation.bien.agence or reservation.bien.proprietaire
+        notify(
+            destinataire,
+            f"Nouveau rendez-vous de visite avec {self.request.user.username} pour \"{reservation.bien.titre}\"",
+        )
+        # Auto-confirmé dès la création (pas d'action requise du propriétaire) :
+        # le locataire est notifié immédiatement, pas seulement le propriétaire.
+        notify(
+            reservation.utilisateur,
+            f"Votre rendez-vous de visite pour \"{reservation.bien.titre}\" est confirmé",
+        )
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -102,4 +115,12 @@ class ReservationStatusUpdateView(APIView):
         serializer = ReservationStatusSerializer(reservation, data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+
+        statut_labels = {"confirmed": "confirmée", "cancelled": "annulée", "rejected": "refusée"}
+        libelle = statut_labels.get(reservation.status, reservation.status)
+        notify(
+            reservation.utilisateur,
+            f"Votre réservation pour \"{reservation.bien.titre}\" a été {libelle}",
+        )
+
         return Response(ReservationSerializer(reservation).data)
