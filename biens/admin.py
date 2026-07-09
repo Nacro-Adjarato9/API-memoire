@@ -4,8 +4,8 @@ from .models import Bien, Document
 
 @admin.register(Bien)
 class BienAdmin(admin.ModelAdmin):
-    list_display = ('titre', 'ville', 'type', 'prix', 'statut', 'proprietaire', 'created_at')
-    list_filter = ('type', 'statut', 'ville', 'created_at')
+    list_display = ('titre', 'ville', 'type', 'prix', 'statut', 'proprietaire', 'est_suspect', 'score_suspicion', 'created_at')
+    list_filter = ('type', 'statut', 'ville', 'est_suspect', 'created_at')
     search_fields = ('titre', 'description', 'ville', 'proprietaire__username')
     readonly_fields = ('created_at', 'updated_at')
     ordering = ('-created_at',)
@@ -23,6 +23,9 @@ class BienAdmin(admin.ModelAdmin):
         }),
         ('Propriétaires', {
             'fields': ('proprietaire', 'agence')
+        }),
+        ('Détection de fraude (IA)', {
+            'fields': ('est_suspect', 'score_suspicion', 'raisons_suspicion')
         }),
         ('Métadonnées', {
             'fields': ('created_at', 'updated_at'),

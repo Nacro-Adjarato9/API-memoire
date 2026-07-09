@@ -14,9 +14,10 @@ from .serializers import (
     RecommendationRequestSerializer,
 )
 from .services import (
-    chat_immobilier_v3, search_biens_intelligente, verify_document,
+    chat_immobilier, search_biens_intelligente, verify_document,
     recommande_villes_par_budget, extract_search_criteria, build_bien_queryset,
-    serialize_biens_for_map, filter_points_by_radius, geocode_address, call_ai
+    serialize_biens_for_map, filter_points_by_radius, geocode_address, call_ai,
+    suggerer_zones, recommend_for_user, get_trends,
 )
 
 
@@ -152,6 +153,45 @@ class BudgetAdvisoryView(APIView):
         })
 
 
+class TrendView(APIView):
+    """Module 6 : lit uniquement le cache (pas de recalcul à la volée), rafraîchi par
+    la commande `compute_trends` lancée périodiquement (cron/tâche planifiée)."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        trends = get_trends()
+        ville = request.query_params.get("ville")
+        if ville:
+            trends = [t for t in trends if t["ville"].lower() == ville.lower()]
+        return Response({"count": len(trends), "results": trends})
+
+
+class RecommendationsPersonnaliseesView(APIView):
+    """Module 2 : biens suggérés à partir de l'historique de recherche et des favoris."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        suggestions = recommend_for_user(request.user)
+        return Response({"count": len(suggestions), "results": suggestions})
+
+
+class ZoneSuggestionsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        ville = request.query_params.get("ville")
+        if not ville:
+            return Response({"error": "Paramètre 'ville' requis"}, status=status.HTTP_400_BAD_REQUEST)
+
+        budget_max = request.query_params.get("budget_max")
+        type_bien = request.query_params.get("type")
+
+        suggestions = suggerer_zones(ville, budget_max=budget_max, type_bien=type_bien)
+        return Response({"ville": ville, "suggestions": suggestions})
+
+
 class IAChatView(APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -164,7 +204,7 @@ class IAChatView(APIView):
         if not message:
             return Response({"error": "Message requis"}, status=400)
 
-        payload = chat_immobilier_v3(message, history, lat, lng)
+        payload = chat_immobilier(message, history, lat, lng)
         return Response(payload)
 
 

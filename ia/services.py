@@ -45,6 +45,352 @@ RÈGLES :
 4. Suggère toujours de regarder la carte interactive.
 5. Termine par une question."""
 
+def get_adjacent_zones(zone):
+    """Zones voisines connues pour une commune donnée (module 5 réutilise ceci)."""
+    return ABIDJAN_ZONES.get(normalize_text(zone), [])
+
+
+def search_with_fallback(criteria, limit=10):
+    """Recherche avec repli en cascade : budget -> zone -> commune voisine -> global.
+
+    Retourne (liste_de_Bien, info) où info decrit si/comment la recherche a ete elargie,
+    pour que l'appelant (API ou chat) puisse l'expliquer a l'utilisateur.
+    """
+    qs = build_bien_queryset(criteria)
+    if qs.exists():
+        return list(qs[:limit]), {"fallback": False, "relaxed": []}
+
+    relaxed = []
+
+    if criteria.get("budget_max"):
+        criteria_budget = criteria.copy()
+        criteria_budget["budget_max"] = int(criteria["budget_max"]) * 1.2
+        qs = build_bien_queryset(criteria_budget)
+        if qs.exists():
+            relaxed.append("budget")
+            return list(qs[:limit]), {"fallback": True, "relaxed": relaxed}
+
+    criteria_zone = criteria.copy()
+    criteria_zone["quartier"] = None
+    criteria_zone["commune"] = None
+    qs = build_bien_queryset(criteria_zone)
+    if qs.exists():
+        relaxed.append("zone")
+        return list(qs[:limit]), {"fallback": True, "relaxed": relaxed}
+
+    ville = criteria.get("ville") or ""
+    zones_voisines = get_adjacent_zones(ville)
+    if zones_voisines:
+        qs = Bien.objects.filter(statut="disponible", ville__in=zones_voisines)
+        if criteria.get("budget_max"):
+            qs = qs.filter(prix__lte=criteria["budget_max"])
+        if criteria.get("type_bien"):
+            qs = qs.filter(type__icontains=criteria["type_bien"])
+        qs = qs.order_by("prix")
+        if qs.exists():
+            relaxed.append("ville_voisine")
+            return list(qs[:limit]), {
+                "fallback": True,
+                "relaxed": relaxed,
+                "villes_suggerees": zones_voisines,
+            }
+
+    qs = Bien.objects.filter(statut="disponible")
+    if criteria.get("budget_max"):
+        qs = qs.filter(prix__lte=criteria["budget_max"])
+    relaxed.append("global")
+    return list(qs.order_by("prix")[:limit]), {"fallback": True, "relaxed": relaxed}
+
+
+TREND_CACHE_TTL = 60 * 60 * 25  # 25h : le cron quotidien rafraîchit avant expiration
+TREND_INDEX_KEY = "logeciv:trend:index"
+
+
+def _trend_cache_key(ville, type_bien):
+    return f"logeciv:trend:{normalize_text(ville)}:{normalize_text(type_bien)}"
+
+
+def compute_trends():
+    """Module 6 : agrège prix moyen/min/max par (ville, type) et met en cache Redis.
+
+    Pas de nouvelle table : les résultats sont recalculés (via ce batch, exécuté par un
+    planificateur externe type cron) et stockés dans le cache déjà configuré (django-redis),
+    avec une variation semaine/semaine calculée par rapport à la dernière valeur en cache.
+    """
+    from django.db.models import Avg, Count, Max, Min
+
+    groupes = (
+        Bien.objects.filter(statut="disponible")
+        .values("ville", "type")
+        .annotate(nb_biens=Count("id"), prix_moyen=Avg("prix"), prix_min=Min("prix"), prix_max=Max("prix"))
+    )
+
+    index = []
+    for groupe in groupes:
+        ville, type_bien = groupe["ville"], groupe["type"]
+        key = _trend_cache_key(ville, type_bien)
+        precedent = cache.get(key)
+        prix_moyen = float(groupe["prix_moyen"])
+
+        variation_pct = None
+        if precedent and precedent.get("prix_moyen"):
+            variation_pct = round((prix_moyen - precedent["prix_moyen"]) / precedent["prix_moyen"] * 100, 1)
+
+        snapshot = {
+            "ville": ville,
+            "type": type_bien,
+            "nb_biens": groupe["nb_biens"],
+            "prix_moyen": prix_moyen,
+            "prix_min": float(groupe["prix_min"]),
+            "prix_max": float(groupe["prix_max"]),
+            "variation_pct_semaine": variation_pct,
+        }
+        cache.set(key, snapshot, TREND_CACHE_TTL)
+        index.append(key)
+
+    cache.set(TREND_INDEX_KEY, index, TREND_CACHE_TTL)
+    return index
+
+
+def get_trends():
+    """Lit uniquement le cache (pas de recalcul à la volée) pour un dashboard rapide."""
+    index = cache.get(TREND_INDEX_KEY) or []
+    trends = [cache.get(key) for key in index]
+    return [t for t in trends if t is not None]
+
+
+MOTS_CLES_SUSPECTS = [
+    "paiement avant visite",
+    "payer avant de visiter",
+    "sans visite",
+    "pas de visite possible",
+    "virement immediat",
+    "virement immédiat",
+    "urgent",
+    "depart precipite",
+    "départ précipité",
+    "argent d'abord",
+]
+
+SEUIL_SUSPICION = 5
+
+
+def evaluate_bien_fraud(bien):
+    """Module 4 : score de suspicion basé uniquement sur des règles (pas d'appel IA).
+
+    Trois règles indépendantes qui accumulent des points :
+    1) prix hors norme comparé à la moyenne ville+type,
+    2) mots-clés suspects dans la description,
+    3) fréquence de publication suspecte du même propriétaire + signalements existants.
+    """
+    from datetime import timedelta
+
+    from django.db.models import Avg
+    from django.utils import timezone
+
+    score = 0.0
+    raisons = []
+
+    # Règle 1 : prix hors norme (moyenne ville+type, hors ce bien)
+    stats = (
+        Bien.objects.filter(ville=bien.ville, type=bien.type)
+        .exclude(id=bien.id)
+        .aggregate(prix_moyen=Avg("prix"))
+    )
+    prix_moyen = stats["prix_moyen"]
+    if prix_moyen:
+        prix_moyen = float(prix_moyen)
+        prix = float(bien.prix)
+        if prix < prix_moyen * 0.3:
+            score += 4
+            raisons.append(f"Prix très inférieur à la moyenne du marché ({prix} vs ~{prix_moyen:.0f} FCFA)")
+        elif prix > prix_moyen * 3:
+            score += 2
+            raisons.append(f"Prix très supérieur à la moyenne du marché ({prix} vs ~{prix_moyen:.0f} FCFA)")
+
+    # Règle 2 : mots-clés suspects dans la description
+    description_norm = normalize_text(bien.description)
+    mots_trouves = [mot for mot in MOTS_CLES_SUSPECTS if normalize_text(mot) in description_norm]
+    if mots_trouves:
+        score += 2 * len(mots_trouves)
+        raisons.append(f"Termes suspects dans la description: {', '.join(mots_trouves)}")
+
+    # Règle 3 : fréquence de publication + signalements existants
+    if bien.proprietaire_id:
+        recent_count = Bien.objects.filter(
+            proprietaire_id=bien.proprietaire_id,
+            created_at__gte=timezone.now() - timedelta(hours=24),
+        ).count()
+        if recent_count >= 5:
+            score += 3
+            raisons.append(f"{recent_count} annonces publiées par le même propriétaire en 24h")
+
+    nb_signalements = bien.signalements.count() if hasattr(bien, "signalements") else 0
+    if nb_signalements:
+        score += min(nb_signalements, 3) * 2
+        raisons.append(f"{nb_signalements} signalement(s) utilisateur existant(s)")
+
+    return {
+        "score_suspicion": score,
+        "est_suspect": score >= SEUIL_SUSPICION,
+        "raisons": raisons,
+    }
+
+
+def check_new_matches_and_price_drops():
+    """Module 7 : détecte les nouveaux biens correspondant aux recherches sauvegardées
+    et les baisses de prix sur les favoris, puis notifie (anti-spam via notify_once)."""
+    from django.utils import timezone
+
+    from favoris.models import Favori
+    from notifications.services import notify_once
+    from utilisateurs.models import HistoriqueRecherche
+
+    nb_notifs = 0
+
+    # 1) Recherches sauvegardées : nouveaux biens depuis le dernier passage
+    utilisateur_ids = HistoriqueRecherche.objects.values_list("utilisateur_id", flat=True).distinct()
+    for user_id in utilisateur_ids:
+        derniere_recherche = HistoriqueRecherche.objects.filter(utilisateur_id=user_id).order_by("-date").first()
+        if not derniere_recherche:
+            continue
+
+        criteria = extract_search_criteria({"texte": derniere_recherche.critere_recherche})
+        cache_key = f"logeciv:notif:last_check:{user_id}"
+        derniere_verif = cache.get(cache_key)
+        maintenant = timezone.now()
+
+        qs = build_bien_queryset(criteria)
+        if derniere_verif:
+            qs = qs.filter(created_at__gt=derniere_verif)
+        nouveaux = list(qs[:5])
+
+        if nouveaux:
+            noms = ", ".join(b.titre for b in nouveaux[:3])
+            message = f"{len(nouveaux)} nouveau(x) bien(s) correspondent à votre recherche : {noms}."
+            dedup_key = "saved_search:" + "-".join(str(b.id) for b in nouveaux)
+            notification = notify_once(
+                derniere_recherche.utilisateur, "saved_search", dedup_key, message, bien=nouveaux[0]
+            )
+            if notification:
+                nb_notifs += 1
+
+        cache.set(cache_key, maintenant, 60 * 60 * 24 * 7)
+
+    # 2) Favoris : baisse de prix depuis le dernier passage
+    for favori in Favori.objects.select_related("bien", "utilisateur"):
+        cache_key = f"logeciv:notif:last_price:{favori.id}"
+        prix_connu = cache.get(cache_key)
+        prix_actuel = float(favori.bien.prix)
+
+        if prix_connu is not None and prix_actuel < prix_connu:
+            message = (
+                f"Le prix de '{favori.bien.titre}' a baissé : "
+                f"{prix_connu:.0f} FCFA -> {prix_actuel:.0f} FCFA."
+            )
+            dedup_key = f"price_drop:{favori.id}:{prix_actuel}"
+            notification = notify_once(favori.utilisateur, "price_drop", dedup_key, message, bien=favori.bien)
+            if notification:
+                nb_notifs += 1
+
+        cache.set(cache_key, prix_actuel, 60 * 60 * 24 * 30)
+
+    return nb_notifs
+
+
+def recommend_for_user(user, limit=10):
+    """Module 2 : recommandations personnalisées à partir de l'historique de recherche
+    et des favoris de l'utilisateur — règles pondérées, pas de ML (échelle du projet)."""
+    from collections import Counter
+
+    from favoris.models import Favori
+    from utilisateurs.models import HistoriqueRecherche
+
+    historiques = HistoriqueRecherche.objects.filter(utilisateur=user).order_by("-date")[:20]
+    favoris = Favori.objects.filter(utilisateur=user).select_related("bien")
+
+    villes = Counter()
+    types = Counter()
+    prix_connus = []
+
+    for h in historiques:
+        criteria = extract_search_criteria({"texte": h.critere_recherche})
+        if criteria.get("ville"):
+            villes[normalize_text(criteria["ville"])] += 1
+        if criteria.get("type_bien"):
+            types[criteria["type_bien"]] += 1
+        if criteria.get("budget_max"):
+            prix_connus.append(criteria["budget_max"])
+
+    biens_favoris_ids = set()
+    for fav in favoris:
+        biens_favoris_ids.add(fav.bien_id)
+        villes[normalize_text(fav.bien.ville)] += 2  # un favori pèse plus qu'une simple recherche
+        types[fav.bien.type] += 2
+        prix_connus.append(float(fav.bien.prix))
+
+    if not villes and not types and not prix_connus:
+        # Pas assez de signal : pas de personnalisation possible, laisser l'appelant
+        # retomber sur une liste générique (ex: biens les plus récents).
+        return []
+
+    ville_preferee = villes.most_common(1)[0][0] if villes else None
+    type_prefere = types.most_common(1)[0][0] if types else None
+    prix_moyen = sum(prix_connus) / len(prix_connus) if prix_connus else None
+    fourchette = (prix_moyen * 0.7, prix_moyen * 1.3) if prix_moyen else None
+
+    candidats = Bien.objects.filter(statut="disponible").exclude(id__in=biens_favoris_ids)
+
+    scores = []
+    for bien in candidats:
+        score = 0
+        if ville_preferee and normalize_text(bien.ville) == ville_preferee:
+            score += 3
+        if type_prefere and bien.type == type_prefere:
+            score += 2
+        if fourchette and fourchette[0] <= float(bien.prix) <= fourchette[1]:
+            score += 2
+        if score > 0:
+            scores.append((score, bien))
+
+    scores.sort(key=lambda pair: pair[0], reverse=True)
+    return [serialize_bien(bien) for _, bien in scores[:limit]]
+
+
+def suggerer_zones(ville, budget_max=None, type_bien=None, limit=5):
+    """Module 5 : propose des zones voisines pertinentes quand une commune est trop chère/vide.
+
+    Réutilise get_adjacent_zones (module 1) au lieu de dupliquer la liste de voisinage,
+    puis classe les voisins par nombre de résultats disponibles (le plus d'offres en premier).
+    """
+    zones_voisines = get_adjacent_zones(ville)
+    if not zones_voisines:
+        return []
+
+    suggestions = []
+    for zone in zones_voisines:
+        qs = Bien.objects.filter(statut="disponible", ville__icontains=zone)
+        if budget_max:
+            qs = qs.filter(prix__lte=budget_max)
+        if type_bien:
+            qs = qs.filter(type__icontains=type_bien)
+        nb_resultats = qs.count()
+        if nb_resultats == 0:
+            continue
+        prix_moyen = qs.order_by("prix")[nb_resultats // 2].prix if nb_resultats else None
+        suggestions.append(
+            {
+                "ville": zone,
+                "nb_resultats": nb_resultats,
+                "prix_moyen": str(prix_moyen) if prix_moyen is not None else None,
+                "raison": f"Zone proche de {ville}, prix comparable",
+            }
+        )
+
+    suggestions.sort(key=lambda s: s["nb_resultats"], reverse=True)
+    return suggestions[:limit]
+
+
 def filtrer_biens_intelligemment(params):
     """Version améliorée avec fallback progressif."""
     qs = build_bien_queryset(params)
@@ -471,77 +817,63 @@ def explain_alternatives(criteria, suggestions):
         return f"Je n'ai pas trouvé une correspondance exacte à {ville}. Voici des logements alternatifs."
     if suggestions:
         return "Voici des logements similaires disponibles."
-def chat_immobilier_v3(message, history=[], lat=None, lng=None):
-    criteria = extract_search_criteria({"texte": message})
-    logements, en_fallback, niveau = filtrer_biens_intelligemment(criteria)
-    if lat and lng:
-        logements = filter_points_by_radius(logements, float(lat), float(lng), 5)
-    context = {"logements": logements[:8], "nb_resultats": len(logements), "en_fallback": en_fallback}
-    messages = [{"role": "system", "content": LOGI_SYSTEM_PROMPT}]
-    for h in history[-10:]: messages.append(h)
-    messages.append({"role": "user", "content": f"Context: {json.dumps(context)}\nMsg: {message}"})
-    reply, _ = call_ai(messages)
-    return {
-        "reply": reply,
-        "reponse": reply,
-        "logements": logements,
-        "en_fallback": en_fallback,
-        "criteres": criteria,
-    }
+def build_base_reply(criteria, logements, en_fallback):
+    """Réponse de secours utilisée quand l'appel a Groq échoue (jamais de réponse vide)."""
+    budget_max = criteria.get("budget_max")
+    ville = criteria.get("ville")
 
-
-def chat_immobilier(message):
-    criteria = extract_search_criteria({"texte": message})
-    suggestions = build_alternatives(criteria, limit=5)
-    resultats = [serialize_bien(bien) for bien in build_bien_queryset(criteria)[:5]]
-
-    if criteria.get("budget_max") and criteria.get("budget_max") <= 100000 and not criteria.get("ville"):
-        base_reply = (
-            "Avec ce budget, je vous recommande Bouaké, Yamoussoukro, Daloa ou Korhogo."
-        )
-    elif criteria.get("budget_max") and criteria.get("budget_max") <= 150000:
+    if budget_max and budget_max <= 100000 and not ville:
+        base_reply = "Avec ce budget, je vous recommande Bouaké, Yamoussoukro, Daloa ou Korhogo."
+    elif budget_max and budget_max <= 150000:
         base_reply = "Avec ce budget, ciblez des quartiers abordables ou des villes secondaires."
     else:
         base_reply = "Je peux vous aider à trouver un bien adapté à votre budget et à votre zone préférée."
 
-    if criteria.get("ville"):
+    if ville:
+        base_reply = f"J'ai compris que vous cherchez autour de {ville}. {base_reply}"
+
+    if logements and not en_fallback:
+        base_reply = f"{base_reply} J'ai trouvé {len(logements)} logement(s) correspondant à votre demande."
+    elif logements and en_fallback:
         base_reply = (
-            f"J'ai compris que vous cherchez autour de {criteria['ville']}."
-            + (" " + base_reply if base_reply else "")
+            f"{base_reply} Je n'ai pas de correspondance exacte, "
+            f"voici {len(logements)} alternative(s) intéressante(s)."
         )
 
-    if resultats:
-        base_reply = (
-            f"{base_reply} J'ai trouvé {len(resultats)} logement(s) correspondant à votre demande."
-        )
-    elif suggestions:
-        base_reply = (
-            f"{base_reply} Je vous propose ces alternatives intéressantes."
-        )
+    return base_reply
 
-    prompt = (
-        "Tu es un assistant immobilier amical et concret pour la Côte d'Ivoire. "
-        "Réponds en français, en 3 phrases maximum, avec un ton utile et orienté action. "
-        f"Message utilisateur: {message}. "
-        f"Critères extraits: {json.dumps(criteria, ensure_ascii=False)}. "
-        f"Biens trouvés: {json.dumps(resultats[:5], ensure_ascii=False)}. "
-        f"Suggestions: {json.dumps(suggestions[:5], ensure_ascii=False)}."
-    )
-    ai_text, _ = call_ai(
-        [
-            {"role": "system", "content": "Tu es un assistant immobilier conversationnel."},
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=220,
-        temperature=0.5,
-    )
+
+def chat_immobilier(message, history=None, lat=None, lng=None):
+    """Assistant IA unique (fusion des anciennes v1/v2/v3).
+
+    Toujours une réponse utile même si l'appel Groq échoue : `reponse` retombe
+    sur `base_reply`, construit à partir de vrais biens (search fallback).
+    """
+    history = history or []
+    criteria = extract_search_criteria({"texte": message})
+    logements, en_fallback, niveau = filtrer_biens_intelligemment(criteria)
+    if lat and lng:
+        logements = filter_points_by_radius(logements, float(lat), float(lng), 5)
+
+    base_reply = build_base_reply(criteria, logements, en_fallback)
+
+    context = {"logements": logements[:8], "nb_resultats": len(logements), "en_fallback": en_fallback}
+    messages = [{"role": "system", "content": LOGI_SYSTEM_PROMPT}]
+    for h in history[-10:]:
+        messages.append(h)
+    messages.append({"role": "user", "content": f"Context: {json.dumps(context, ensure_ascii=False)}\nMsg: {message}"})
+
+    ai_text, _ = call_ai(messages)
+    reply = ai_text or base_reply
 
     return {
         "message": message,
+        "reply": reply,
+        "reponse": reply,
+        "logements": logements,
+        "resultats": logements,
+        "en_fallback": en_fallback,
         "criteres": criteria,
-        "reponse": ai_text or base_reply,
-        "resultats": resultats,
-        "suggestions": suggestions,
     }
 
 
@@ -607,63 +939,7 @@ def search_biens_intelligente_v2(data):
     }
 
 
-def chat_immobilier_v2(message):
-    criteria = extract_search_criteria({"texte": message})
-    suggestions = build_alternatives(criteria, limit=5)
-    biens_queryset = list(build_bien_queryset(criteria)[:5])
-    resultats = [serialize_bien(bien) for bien in biens_queryset]
-    map_points = serialize_biens_for_map(biens_queryset, limit=5)
-
-    if criteria.get("budget_max") and criteria.get("budget_max") <= 100000 and not criteria.get("ville"):
-        base_reply = "Avec ce budget, je vous recommande Bouaké, Yamoussoukro, Daloa ou Korhogo."
-    elif criteria.get("budget_max") and criteria.get("budget_max") <= 150000:
-        base_reply = "Avec ce budget, ciblez des quartiers abordables ou des villes secondaires."
-    else:
-        base_reply = "Je peux vous aider à trouver un bien adapté à votre budget et à votre zone préférée."
-
-    if criteria.get("ville"):
-        base_reply = (
-            f"J'ai compris que vous cherchez autour de {criteria['ville']}."
-            + (" " + base_reply if base_reply else "")
-        )
-
-    if resultats:
-        base_reply = f"{base_reply} J'ai trouvé {len(resultats)} logement(s) correspondant à votre demande."
-        if map_points:
-            base_reply = f"{base_reply} Certains biens sont aussi visibles sur la carte."
-    elif suggestions:
-        base_reply = f"{base_reply} Je vous propose ces alternatives intéressantes."
-
-    prompt = (
-        "Tu es un assistant immobilier amical et concret pour la Côte d'Ivoire. "
-        "Réponds en français, en 3 phrases maximum, avec un ton utile et orienté action. "
-        f"Message utilisateur: {message}. "
-        f"Critères extraits: {json.dumps(criteria, ensure_ascii=False)}. "
-        f"Biens trouvés: {json.dumps(resultats[:5], ensure_ascii=False)}. "
-        f"Carte: {json.dumps(map_points[:5], ensure_ascii=False)}. "
-        f"Suggestions: {json.dumps(suggestions[:5], ensure_ascii=False)}."
-    )
-    ai_text, _ = call_ai(
-        [
-            {"role": "system", "content": LOGI_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=220,
-        temperature=0.5,
-    )
-
-    return {
-        "message": message,
-        "criteres": criteria,
-        "reponse": ai_text or base_reply,
-        "resultats": resultats,
-        "map_points": map_points,
-        "suggestions": suggestions,
-    }
-
-
 search_biens_intelligente = search_biens_intelligente_v2
-chat_immobilier = chat_immobilier_v2
 
 
 def validate_document_locally(document_type, document_data=None):

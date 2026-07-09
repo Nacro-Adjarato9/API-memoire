@@ -10,6 +10,9 @@ from .views import (
     GeocoderAPIView,
     BudgetAdvisoryView,
     RecommendationIAViewSet,
+    ZoneSuggestionsView,
+    RecommendationsPersonnaliseesView,
+    TrendView,
 )
 
 router = DefaultRouter()
@@ -19,6 +22,15 @@ urlpatterns = [
     path('', include(router.urls)),
     # Recherche intelligente
     path('recherche/rechercher/', RechercheIAView.as_view({'post': 'rechercher'}), name='ia_recherche'),
+
+    # Suggestion de zones voisines (module 5)
+    path('suggestions-zone/', ZoneSuggestionsView.as_view(), name='ia_suggestions_zone'),
+
+    # Recommandations personnalisées (module 2)
+    path('recommandations-personnalisees/', RecommendationsPersonnaliseesView.as_view(), name='ia_recommandations_personnalisees'),
+
+    # Analyse des tendances (module 6)
+    path('tendances/', TrendView.as_view(), name='ia_tendances'),
 
     # Chat immobilier
     path('chat/', IAChatView.as_view(), name='ia_chat'),

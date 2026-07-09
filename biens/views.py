@@ -63,6 +63,38 @@ class BienViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    def list(self, request, *args, **kwargs):
+        """Liste les biens ; si la recherche stricte donne peu/pas de résultats,
+        élargit automatiquement (budget, zone, villes voisines) au lieu de renvoyer une liste vide."""
+        queryset = self.filter_queryset(self.get_queryset())
+        fallback_info = {"fallback": False, "relaxed": []}
+
+        criteres_recherche = {
+            "ville": self.request.query_params.get("ville"),
+            "type_bien": self.request.query_params.get("type"),
+            "budget_min": self.request.query_params.get("prix_min"),
+            "budget_max": self.request.query_params.get("prix_max"),
+            "nombre_chambres": self.request.query_params.get("nombre_chambres"),
+        }
+        a_des_criteres = any(v not in (None, "") for v in criteres_recherche.values())
+
+        if a_des_criteres and queryset.count() < 3:
+            from ia.services import search_with_fallback
+
+            biens_elargis, fallback_info = search_with_fallback(criteres_recherche)
+            ids = [bien.id for bien in biens_elargis]
+            queryset = Bien.objects.filter(id__in=ids).order_by("prix")
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            response = self.get_paginated_response(serializer.data)
+            response.data["fallback"] = fallback_info
+            return response
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({"results": serializer.data, "fallback": fallback_info})
+
     @swagger_auto_schema(
         operation_description="Récupérer les biens de l'utilisateur connecté ou tous les biens disponibles",
         responses={200: BienSerializer(many=True)}

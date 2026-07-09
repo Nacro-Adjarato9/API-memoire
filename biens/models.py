@@ -109,6 +109,11 @@ class Bien(models.Model):
     proprietaire = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='biens', blank=True, null=True)
     agence = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name='biens_agence', blank=True, null=True)
 
+    # Détection de fraude (module IA, règles uniquement)
+    score_suspicion = models.FloatField(default=0)
+    est_suspect = models.BooleanField(default=False)
+    raisons_suspicion = models.JSONField(default=list, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
