@@ -332,7 +332,9 @@ class ProfilProprietaireSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProfilProprietaire
         fields = '__all__'
-        read_only_fields = ('user', 'created_at')
+        # kyc_* : uniquement modifiable par le flux Didit (kyc/views.py), jamais via un
+        # PATCH classique du profil, sinon un utilisateur pourrait s'auto-approuver.
+        read_only_fields = ('user', 'created_at', 'kyc_status', 'kyc_session_id', 'kyc_verified_at')
 
     def validate(self, attrs):
         if self.instance is None:
@@ -353,7 +355,9 @@ class ProfilAgenceSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProfilAgence
         fields = '__all__'
-        read_only_fields = ('user', 'created_at')
+        # kyc_* : uniquement modifiable par le flux Didit (kyc/views.py), jamais via un
+        # PATCH classique du profil, sinon un utilisateur pourrait s'auto-approuver.
+        read_only_fields = ('user', 'created_at', 'kyc_status', 'kyc_session_id', 'kyc_verified_at')
 
     def _decode_base64_file(self, data, prefix="file"):
         if not data:

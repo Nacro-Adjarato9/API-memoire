@@ -5,6 +5,15 @@ from django.utils import timezone
 User = get_user_model()
 
 
+class KycStatus(models.TextChoices):
+    """Statut de la vérification d'identité automatique (Didit), distincte du
+    système manuel existant (statut_verification / documents uploadés)."""
+    NOT_STARTED = "not_started", "Non démarrée"
+    PENDING = "pending", "En cours de vérification"
+    APPROVED = "approved", "Vérifiée"
+    DECLINED = "declined", "Refusée"
+
+
 class UserProfile(models.Model):
     ROLE_CHOICES = [
         ('locataire', 'Locataire'),
@@ -67,7 +76,12 @@ class ProfilProprietaire(models.Model):
         ('refuse', 'Refusé'),
     ], default='en_attente')
     date_verification = models.DateTimeField(blank=True, null=True)
-    
+
+    # Vérification d'identité automatique (Didit KYC), en plus du flux manuel ci-dessus
+    kyc_status = models.CharField(max_length=20, choices=KycStatus.choices, default=KycStatus.NOT_STARTED)
+    kyc_session_id = models.CharField(max_length=100, blank=True, null=True)
+    kyc_verified_at = models.DateTimeField(blank=True, null=True)
+
     # Infos immobilières
     nombre_biens = models.PositiveIntegerField(default=0)
     type_biens = models.CharField(max_length=200, blank=True)  # appartement, maison, etc.
@@ -120,7 +134,12 @@ class ProfilAgence(models.Model):
         ('refuse', 'Refusé'),
     ], default='en_attente')
     date_verification = models.DateTimeField(blank=True, null=True)
-    
+
+    # Vérification d'identité automatique (Didit KYC), en plus du flux manuel ci-dessus
+    kyc_status = models.CharField(max_length=20, choices=KycStatus.choices, default=KycStatus.NOT_STARTED)
+    kyc_session_id = models.CharField(max_length=100, blank=True, null=True)
+    kyc_verified_at = models.DateTimeField(blank=True, null=True)
+
     # Activité
     nombre_biens = models.PositiveIntegerField(default=0)
     type_biens = models.CharField(max_length=200, blank=True)

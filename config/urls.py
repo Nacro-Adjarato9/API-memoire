@@ -100,6 +100,7 @@ urlpatterns = [
     path('api/', include('utilisateurs.urls')),
     path('ia/', include('ia.urls')),
     path('api/ia/', include('ia.urls')),
+    path('api/kyc/', include('kyc.urls')),
     path('api/', include('notifications.urls')),
     path('api/', include('reservations.urls')),
     path('api/', include('chat.urls')),

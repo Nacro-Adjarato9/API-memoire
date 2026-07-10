@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     'favoris',
     'notifications',
     'tarifs',
+    'kyc',
 ]
 
 MIDDLEWARE = [
@@ -274,3 +275,8 @@ CINETPAY_API_KEY = os.getenv("CINETPAY_API_KEY", "")
 CINETPAY_SITE_ID = os.getenv("CINETPAY_SITE_ID", "")
 CINETPAY_NOTIFY_URL = os.getenv("CINETPAY_NOTIFY_URL", "")
 CINETPAY_RETURN_URL = os.getenv("CINETPAY_RETURN_URL", "")
+
+# Didit (verification d'identite KYC des proprietaires/agences)
+# DIDIT_API_KEY, DIDIT_WORKFLOW_ID, DIDIT_WEBHOOK_SECRET sont lus directement
+# via os.environ.get(...) dans kyc/didit_service.py, rien d'autre a ajouter ici.
+DIDIT_FRONTEND_RETURN_URL = os.getenv("DIDIT_FRONTEND_RETURN_URL", "")
