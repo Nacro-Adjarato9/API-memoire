@@ -36,14 +36,31 @@ SECONDARY_CITIES = {
 }
 
 LOGI_SYSTEM_PROMPT = """Tu es LOGI, l'assistant immobilier intelligent de LogeCiv en Côte d'Ivoire.
-Agis comme un agent humain, chaleureux et expert.
+Agis comme un agent humain, chaleureux et expert. Adapte ton ton à ce que l'utilisateur vient
+d'écrire, ne suis jamais un script fixe qui se répète peu importe le message.
 Langues : Français, Anglais, Dioula.
 RÈGLES :
-1. Utilise UNIQUEMENT les données du 'context'.
-2. Ne jamais inventer de prix ou de biens.
-3. Si aucun bien : propose des alternatives (fallback) avec pédagogie.
-4. Suggère toujours de regarder la carte interactive.
-5. Termine par une question."""
+1. Si 'context.recherche_demandee' est false (l'utilisateur n'a pas exprimé de critère de
+   recherche : simple salutation, question générale, remerciement, etc.) : réponds
+   naturellement à ce qu'il a dit, ne mentionne AUCUN bien, AUCUN prix, AUCUNE alternative,
+   et pose une question ouverte pour comprendre ce qu'il cherche (ville, budget, type de logement).
+2. Si 'context.recherche_demandee' est true : utilise UNIQUEMENT les données du 'context'
+   pour présenter les biens ou alternatives trouvés. Ne jamais inventer de prix ou de biens.
+3. Si recherche demandée mais aucun bien trouvé : propose les alternatives du 'context' avec pédagogie.
+4. Ne suggère de regarder la carte interactive que si des biens sont réellement présentés.
+5. Termine par une question, adaptée au contexte de la conversation."""
+
+# Critères qui indiquent une vraie intention de recherche (par opposition à un message de
+# conversation générale comme "Bonjour" ou "Merci"). Si aucun n'est présent, on ne déclenche
+# ni recherche en base ni mention de biens dans la réponse.
+CRITERES_INTENTION_RECHERCHE = (
+    "ville", "quartier", "commune", "type_bien", "budget_min", "budget_max",
+    "nombre_chambres", "proximite",
+)
+
+
+def has_search_intent(criteria):
+    return any(criteria.get(champ) for champ in CRITERES_INTENTION_RECHERCHE)
 
 def get_adjacent_zones(zone):
     """Zones voisines connues pour une commune donnée (module 5 réutilise ceci)."""
@@ -846,18 +863,37 @@ def build_base_reply(criteria, logements, en_fallback):
 def chat_immobilier(message, history=None, lat=None, lng=None):
     """Assistant IA unique (fusion des anciennes v1/v2/v3).
 
+    La recherche de biens (et donc toute mention de biens/prix dans la réponse) ne se
+    déclenche que si le message contient une vraie intention de recherche (ville, budget,
+    type de logement...). Un simple "Bonjour" reçoit une réponse conversationnelle, jamais
+    une liste de biens - y compris d'éventuelles données de test présentes en base.
+
     Toujours une réponse utile même si l'appel Groq échoue : `reponse` retombe
     sur `base_reply`, construit à partir de vrais biens (search fallback).
     """
     history = history or []
     criteria = extract_search_criteria({"texte": message})
-    logements, en_fallback, niveau = filtrer_biens_intelligemment(criteria)
-    if lat and lng:
-        logements = filter_points_by_radius(logements, float(lat), float(lng), 5)
+    recherche_demandee = has_search_intent(criteria)
 
-    base_reply = build_base_reply(criteria, logements, en_fallback)
+    if recherche_demandee:
+        logements, en_fallback, niveau = filtrer_biens_intelligemment(criteria)
+        if lat and lng:
+            logements = filter_points_by_radius(logements, float(lat), float(lng), 5)
+        base_reply = build_base_reply(criteria, logements, en_fallback)
+    else:
+        logements, en_fallback = [], False
+        base_reply = (
+            "Bonjour ! Je suis LOGI, votre assistant immobilier LogeCiv. "
+            "Que recherchez-vous : un studio, un appartement, une villa ? "
+            "Dans quelle ville ou quel quartier, et avec quel budget ?"
+        )
 
-    context = {"logements": logements[:8], "nb_resultats": len(logements), "en_fallback": en_fallback}
+    context = {
+        "recherche_demandee": recherche_demandee,
+        "logements": logements[:8],
+        "nb_resultats": len(logements),
+        "en_fallback": en_fallback,
+    }
     messages = [{"role": "system", "content": LOGI_SYSTEM_PROMPT}]
     for h in history[-10:]:
         messages.append(h)
@@ -873,6 +909,7 @@ def chat_immobilier(message, history=None, lat=None, lng=None):
         "logements": logements,
         "resultats": logements,
         "en_fallback": en_fallback,
+        "recherche_demandee": recherche_demandee,
         "criteres": criteria,
     }
 
