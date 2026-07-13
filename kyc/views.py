@@ -44,6 +44,12 @@ class StartKycView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        if not settings.DIDIT_ENABLED:
+            return Response(
+                {"error": "La vérification d'identité automatique est temporairement désactivée."},
+                status=503,
+            )
+
         profil = _get_kyc_profile(request.user)
         if profil is None:
             return Response(
@@ -82,6 +88,11 @@ class KycStatusView(APIView):
         profil = _get_kyc_profile(request.user)
         if profil is None:
             return Response({"kyc_status": KycStatus.NOT_STARTED, "kyc_verified_at": None})
+
+        if not settings.DIDIT_ENABLED:
+            # Aucun appel reseau a Didit tant que la fonctionnalite est desactivee :
+            # on renvoie simplement la derniere valeur connue en base.
+            return Response({"kyc_status": profil.kyc_status, "kyc_verified_at": profil.kyc_verified_at})
 
         # Rafraichissement "best effort" : utile en developpement quand le webhook
         # Didit ne peut pas atteindre localhost. En cas d'echec on garde simplement

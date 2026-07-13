@@ -280,3 +280,7 @@ CINETPAY_RETURN_URL = os.getenv("CINETPAY_RETURN_URL", "")
 # DIDIT_API_KEY, DIDIT_WORKFLOW_ID, DIDIT_WEBHOOK_SECRET sont lus directement
 # via os.environ.get(...) dans kyc/didit_service.py, rien d'autre a ajouter ici.
 DIDIT_FRONTEND_RETURN_URL = os.getenv("DIDIT_FRONTEND_RETURN_URL", "")
+# Coupe-circuit : desactive par defaut (aucun appel reseau a Didit possible)
+# pour ne pas risquer un echec en direct (ex: pendant une soutenance sans wifi
+# fiable). Remettre a "True" dans .env pour reactiver la fonctionnalite.
+DIDIT_ENABLED = os.getenv("DIDIT_ENABLED", "False") == "True"
