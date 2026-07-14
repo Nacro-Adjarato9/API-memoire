@@ -29,12 +29,14 @@ class ReservationViewSet(viewsets.ModelViewSet):
         notify(
             destinataire,
             f"Nouveau rendez-vous de visite avec {self.request.user.username} pour \"{reservation.bien.titre}\"",
+            type='reservation', bien=reservation.bien, reservation=reservation,
         )
         # Auto-confirmé dès la création (pas d'action requise du propriétaire) :
         # le locataire est notifié immédiatement, pas seulement le propriétaire.
         notify(
             reservation.utilisateur,
             f"Votre rendez-vous de visite pour \"{reservation.bien.titre}\" est confirmé",
+            type='reservation', bien=reservation.bien, reservation=reservation,
         )
 
     def get_queryset(self):
@@ -121,6 +123,7 @@ class ReservationStatusUpdateView(APIView):
         notify(
             reservation.utilisateur,
             f"Votre réservation pour \"{reservation.bien.titre}\" a été {libelle}",
+            type='reservation', bien=reservation.bien, reservation=reservation,
         )
 
         return Response(ReservationSerializer(reservation).data)

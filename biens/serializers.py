@@ -121,13 +121,22 @@ class BienCreateSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
+        from ia.services import evaluate_bien_fraud
+
         user = self.context['request'].user
         role = getattr(getattr(user, 'profile', None), 'role', None)
         if role in ('agent', 'agence'):
             validated_data['agence'] = user
         else:
             validated_data['proprietaire'] = user
-        return super().create(validated_data)
+        bien = super().create(validated_data)
+
+        resultat = evaluate_bien_fraud(bien)
+        bien.score_suspicion = resultat['score_suspicion']
+        bien.est_suspect = resultat['est_suspect']
+        bien.raisons_suspicion = resultat['raisons']
+        bien.save(update_fields=['score_suspicion', 'est_suspect', 'raisons_suspicion'])
+        return bien
 
 
 class DocumentSerializer(serializers.ModelSerializer):

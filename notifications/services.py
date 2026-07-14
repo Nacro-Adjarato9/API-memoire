@@ -7,14 +7,21 @@ from .models import Notification
 DEDUP_WINDOW_HOURS = 24
 
 
-def notify(user, message):
+def notify(user, message, type='system', bien=None, reservation=None, conversation_id=''):
     """Crée une notification pour un utilisateur. Ne lève jamais d'exception :
     un échec de notification ne doit jamais faire planter l'action métier
-    qui l'a déclenchée (message envoyé, réservation confirmée, ...)."""
+    qui l'a déclenchée (message envoyé, réservation confirmée, ...).
+
+    type/bien/reservation/conversation_id permettent au frontend de rediriger
+    l'utilisateur vers l'élément concerné au clic, au lieu de se contenter de
+    marquer la notification comme lue sans action."""
     if user is None:
         return
     try:
-        Notification.objects.create(user=user, message=message)
+        Notification.objects.create(
+            user=user, message=message, type=type, bien=bien,
+            reservation=reservation, conversation_id=conversation_id,
+        )
     except Exception:
         pass
 

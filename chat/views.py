@@ -20,7 +20,10 @@ class MessageViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         message = serializer.save(sender=self.request.user)
-        notify(message.receiver, f"Nouveau message de {self.request.user.username}")
+        notify(
+            message.receiver, f"Nouveau message de {self.request.user.username}",
+            type='message', conversation_id=message.conversation_id,
+        )
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -70,8 +73,15 @@ class MessageViewSet(viewsets.ModelViewSet):
         for conv_id in conversation_ids:
             last_message = Message.objects.filter(conversation_id=conv_id).order_by('-created_at').first()
             if last_message:
+                # L'autre participant (celui qui n'est pas l'utilisateur connecte) : le
+                # frontend en a besoin pour repondre, sinon il ne sait pas a qui envoyer.
+                autre_participant = (
+                    last_message.receiver if last_message.sender_id == request.user.id else last_message.sender
+                )
                 conversations.append({
                     'conversation_id': conv_id,
+                    'receiver_id': autre_participant.id,
+                    'receiver_username': autre_participant.username,
                     'last_message': MessageSerializer(last_message).data,
                     'unread_count': Message.objects.filter(
                         conversation_id=conv_id,

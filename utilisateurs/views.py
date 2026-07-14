@@ -610,9 +610,9 @@ def _run_ia_document_check(profile, document_type, file_field):
     profile.save(update_fields=['statut_verification', 'date_verification'])
 
     if profile.statut_verification == 'valide':
-        notify(profile.user, "Vos documents ont été vérifiés et validés.")
+        notify(profile.user, "Vos documents ont été vérifiés et validés.", type='document')
     else:
-        notify(profile.user, "Vos documents sont en cours de vérification manuelle.")
+        notify(profile.user, "Vos documents sont en cours de vérification manuelle.", type='document')
 
 
 def _run_ia_document_check_async(profile, document_type, file_field):

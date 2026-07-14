@@ -5,10 +5,15 @@ from .models import Notification
 
 class NotificationSerializer(serializers.ModelSerializer):
     user = serializers.ReadOnlyField(source='user.username')
+    bien = serializers.PrimaryKeyRelatedField(read_only=True)
+    reservation = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = Notification
-        fields = ('id', 'user', 'message', 'is_read', 'created_at')
+        fields = (
+            'id', 'user', 'message', 'is_read', 'created_at',
+            'type', 'bien', 'reservation', 'conversation_id',
+        )
         read_only_fields = ('id', 'user', 'created_at')
 
 
