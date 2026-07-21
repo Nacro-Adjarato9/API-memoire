@@ -10,6 +10,19 @@ from .serializers import BienSerializer, BienCreateSerializer, DocumentSerialize
 from reservations.models import Reservation
 
 
+def promouvoir_biens_disponibles():
+    """Fait passer en 'disponible' les biens 'reserve' dont la date de
+    disponibilite est atteinte. Pas de tache planifiee (Celery) requise : cet
+    appel est fait a chaque consultation de la liste des biens, donc le statut
+    se corrige tout seul des la prochaine visite/recherche, sans intervention
+    manuelle du proprietaire."""
+    from datetime import date
+
+    Bien.objects.filter(
+        statut='reserve', disponible_a_partir__lte=date.today()
+    ).update(statut='disponible')
+
+
 class BienViewSet(viewsets.ModelViewSet):
     queryset = Bien.objects.all().order_by('-created_at')
 
@@ -40,6 +53,7 @@ class BienViewSet(viewsets.ModelViewSet):
         return obj
 
     def get_queryset(self):
+        promouvoir_biens_disponibles()
         queryset = super().get_queryset()
         prix_min = self.request.query_params.get('prix_min')
         prix_max = self.request.query_params.get('prix_max')

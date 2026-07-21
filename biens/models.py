@@ -2,6 +2,19 @@ from django.conf import settings
 from django.db import models
 
 
+def resoudre_statut_disponibilite(disponible_a_partir, statut_demande=None):
+    """Deduit le statut 'disponible'/'reserve' a partir de la date de
+    disponibilite renseignee par le proprietaire, sans toucher aux statuts
+    'loue'/'vendu' qui restent sous controle manuel explicite."""
+    from datetime import date
+
+    if statut_demande in ('loue', 'vendu'):
+        return statut_demande
+    if disponible_a_partir and disponible_a_partir > date.today():
+        return 'reserve'
+    return 'disponible'
+
+
 class Bien(models.Model):
     TYPE_CHOICES = [
         ('appartement', 'Appartement'),

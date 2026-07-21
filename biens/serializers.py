@@ -4,7 +4,7 @@ import uuid
 from django.core.files.base import ContentFile
 from rest_framework import serializers
 
-from .models import Bien, Document
+from .models import Bien, Document, resoudre_statut_disponibilite
 
 
 class BienSerializer(serializers.ModelSerializer):
@@ -118,6 +118,17 @@ class BienCreateSerializer(serializers.ModelSerializer):
             data['latitude'] = round(data['latitude'], 6)
         if data.get('longitude') is not None:
             data['longitude'] = round(data['longitude'], 6)
+
+        # Le statut suit automatiquement la date de disponibilite renseignee par
+        # le proprietaire : date future -> "reserve" jusqu'a cette date, date
+        # passee/aujourd'hui -> "disponible". Ne s'applique que si la date est
+        # effectivement fournie dans cette requete (ne touche pas au statut sur
+        # un PATCH qui ne concerne pas la disponibilite), et ne court-circuite
+        # jamais un statut explicite 'loue'/'vendu'.
+        if 'disponible_a_partir' in data:
+            data['statut'] = resoudre_statut_disponibilite(
+                data.get('disponible_a_partir'), data.get('statut')
+            )
         return data
 
     def create(self, validated_data):
