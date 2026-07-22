@@ -14,10 +14,13 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+import re
+
 from django.conf import settings
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.views.generic import RedirectView, TemplateView
+from django.views.static import serve as serve_static
 from rest_framework.routers import DefaultRouter
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -134,9 +137,16 @@ urlpatterns = [
     ),
 ]
 
-from django.conf.urls.static import static
-
-# Sert les fichiers media (photos de biens) meme en production (DEBUG=False) :
-# Django ne les sert automatiquement qu'en debug. A cette echelle de projet
-# (pas de S3/CDN), on les sert nous-memes plutot que de les rendre invisibles.
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Sert les fichiers media (photos de biens) meme en production (DEBUG=False).
+# Le helper django.conf.urls.static.static() refuse de s'activer des que
+# DEBUG=False (verifie en interne, impossible a contourner en l'appelant
+# nous-memes) : on appelle donc directement la vue django.views.static.serve.
+# A cette echelle de projet (pas de S3/CDN), on les sert nous-memes plutot
+# que de les rendre invisibles.
+urlpatterns += [
+    re_path(
+        r"^%s(?P<path>.*)$" % re.escape(settings.MEDIA_URL.lstrip("/")),
+        serve_static,
+        {"document_root": settings.MEDIA_ROOT},
+    ),
+]
