@@ -134,6 +134,9 @@ urlpatterns = [
     ),
 ]
 
-if settings.DEBUG:
-    from django.conf.urls.static import static
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+from django.conf.urls.static import static
+
+# Sert les fichiers media (photos de biens) meme en production (DEBUG=False) :
+# Django ne les sert automatiquement qu'en debug. A cette echelle de projet
+# (pas de S3/CDN), on les sert nous-memes plutot que de les rendre invisibles.
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
