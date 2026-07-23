@@ -221,6 +221,11 @@ EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@immobilier-app.com")
 SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
 
+# Si defini, les emails (verification, reset mdp) passent par l'API HTTP de
+# Brevo au lieu du SMTP classique : le SMTP sortant est bloque par de
+# nombreux hebergeurs (dont Render), l'API HTTP (port 443) ne l'est jamais.
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+
 # Frontend URL for email links
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 
