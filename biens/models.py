@@ -117,6 +117,9 @@ class Bien(models.Model):
     terrasse = models.BooleanField(default=False)
     parking_garde = models.BooleanField(default=False)
     interphone = models.BooleanField(default=False)
+    eau_courante = models.BooleanField(default=True)
+    electricite = models.BooleanField(default=True)
+    travaux_a_prevoir = models.BooleanField(default=False)
 
     # Relations
     proprietaire = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='biens', blank=True, null=True)
